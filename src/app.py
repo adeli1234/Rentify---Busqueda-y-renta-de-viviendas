@@ -1,43 +1,61 @@
 import os
 import csv
+import unicodedata
 from apify_client import ApifyClient
 
-# 1. Inicializa el cliente con tu token de Apify
-client = ApifyClient("token")
+# 1. Token desde variable de entorno (PowerShell: $env:APIFY_TOKEN="tu_token")
+client = ApifyClient(os.getenv("TOKEN"))  # o usa os.environ["APIFY_TOKEN"] si lo guardaste en variable de entorno
 
-# 2. Configura los parámetros delimitando a Estado/Ciudad
+# 2. Parámetros de búsqueda + proxy residencial
 run_input = {
     "country": "mx",
-    "operation": "rent",        # "sale" (venta) o "rent" (renta)
-    "propertyType": "apartment",    # "house", "apartment", "land", "commercial", etc.
+    "operation": "rent",
+    "propertyType": "apartment",
     "locations": ["queretaro/queretaro"],
     "maxListings": 50,
+    "proxyConfiguration": {
+        "useApifyProxy": True,
+        "apifyProxyGroups": ["RESIDENTIAL"],
+    },
 }
 
-# 3. Ejecuta el Actor y espera a que termine
-try:
-    run = client.actor("neverempty/mercadolibre-real-estate-listings").call(run_input=run_input)
-    dataset_id = run.default_dataset_id 
-except KeyboardInterrupt:
-    print("User closed the input prompt before entering any data.")
+# 3. Ejecutar el actor
+run = client.actor("neverempty/mercadolibre-real-estate-listings").call(run_input=run_input)
+dataset_id = run.default_dataset_id
 
-# 4. Opción A: Descargar el CSV directamente desde Apify (tal cual viene)
+# 4. Descargar items y validar que haya datos
+items = list(client.dataset(dataset_id).iterate_items())
+print(f"Items recibidos: {len(items)}")
+
+if not items:
+    raise SystemExit(
+        "El actor no devolvió datos. MercadoLibre probablemente sigue bloqueando "
+        "(revisa el log por 'verify you are a person')."
+    )
+
+print("Ejemplo de registro:", items[0])  # para ver los nombres reales de los campos
+
+# 5. CSV crudo
 csv_bytes = client.dataset(dataset_id).get_items_as_bytes(item_format="csv")
 with open("propiedades_queretaro_raw.csv", "wb") as f:
     f.write(csv_bytes)
 
-# 5. Opción B (Recomendada): Filtrar exactamente por ciudad y guardar CSV limpio
-items = list(client.dataset(dataset_id).iterate_items())
+# 6. Filtro por municipio de Querétaro (cualquier colonia: Juriquilla, Centro, Milenio III...)
+def normalizar(texto):
+    texto = unicodedata.normalize("NFD", str(texto or ""))
+    return "".join(c for c in texto if unicodedata.category(c) != "Mn").lower().strip()
 
-# Filtramos asegurando que el estado y la ciudad correspondan a Querétaro
-filtrados = [
-    item for item in items
-    if "querétaro" in str(item.get("state", "")).lower() or "queretaro" in str(item.get("state", "")).lower()
-    if "querétaro" in str(item.get("city", "")).lower() or "queretaro" in str(item.get("city", "")).lower()
-]
+def municipio(item):
+    if item.get("city"):
+        return normalizar(item["city"])
+    ubicacion = item.get("location") or item.get("address") or ""
+    return normalizar(str(ubicacion).split(",")[-1])
+
+print("Municipios encontrados:", {municipio(i) for i in items})
+
+filtrados = [i for i in items if municipio(i) in ("queretaro", "santiago de queretaro")]
 
 if filtrados:
-    # Obtener todas las columnas posibles de los registros
     columnas = list(filtrados[0].keys())
     with open("propiedades_ciudad_queretaro.csv", "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=columnas, extrasaction="ignore")
@@ -45,4 +63,4 @@ if filtrados:
         writer.writerows(filtrados)
     print(f"✅ Se exportaron {len(filtrados)} propiedades a 'propiedades_ciudad_queretaro.csv'")
 else:
-    print("⚠️ No se encontraron registros que coincidan con el filtro exacto de ciudad.")
+    print("⚠️ Ningún registro coincide con el filtro; revisa 'Municipios encontrados' y el ejemplo de arriba.")

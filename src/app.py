@@ -1,24 +1,28 @@
+import os
 import csv
 from apify_client import ApifyClient
 
 # 1. Inicializa el cliente con tu token de Apify
-client = ApifyClient("<TU_API_TOKEN>")
+client = ApifyClient("token")
 
 # 2. Configura los parámetros delimitando a Estado/Ciudad
 run_input = {
     "country": "mx",
-    "operation": "sale",        # "sale" (venta) o "rent" (renta)
-    "propertyType": "house",    # "house", "apartment", "land", "commercial", etc.
+    "operation": "rent",        # "sale" (venta) o "rent" (renta)
+    "propertyType": "apartment",    # "house", "apartment", "land", "commercial", etc.
     "locations": ["queretaro/queretaro"],
     "maxListings": 50,
 }
 
 # 3. Ejecuta el Actor y espera a que termine
-run = client.actor("neverempty/mercadolibre-real-estate-listings").call(run_input=run_input)
-dataset_id = run["defaultDatasetId"]
+try:
+    run = client.actor("neverempty/mercadolibre-real-estate-listings").call(run_input=run_input)
+    dataset_id = run.default_dataset_id 
+except KeyboardInterrupt:
+    print("User closed the input prompt before entering any data.")
 
 # 4. Opción A: Descargar el CSV directamente desde Apify (tal cual viene)
-csv_bytes = client.dataset(dataset_id).download_items(item_format="csv")
+csv_bytes = client.dataset(dataset_id).get_items_as_bytes(item_format="csv")
 with open("propiedades_queretaro_raw.csv", "wb") as f:
     f.write(csv_bytes)
 

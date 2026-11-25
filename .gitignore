@@ -1,6 +1,5 @@
 .venv
 venv/
 
-*.csv
 *.toml
 .env

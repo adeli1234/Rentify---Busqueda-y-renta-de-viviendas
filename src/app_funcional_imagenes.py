@@ -1,13 +1,24 @@
 import csv
+import re
 import time
 from playwright.sync_api import sync_playwright
 
 BASE = "https://inmuebles.mercadolibre.com.mx/departamentos/venta/queretaro/queretaro/"
 MAX_PAGINAS = 10        # ~48 resultados por página
-MAX_DETALLES = 20       # cuántos anuncios visitar para sacar TODAS las fotos (0 = solo portada)
-PAUSA_DETALLE = 5       # segundos entre visitas a anuncios
-ARCHIVO = "propiedades_queretaro.csv"
+MAX_DETALLES = 200       # cuántos anuncios visitar para sacar TODAS las fotos (0 = solo portada)
+PAUSA_DETALLE = 8       # segundos entre visitas a anuncios
+ARCHIVO = "propiedades_queretaro_imagenes.csv"
 COLUMNAS = ["titulo", "precio", "atributos", "ubicacion", "url", "foto_portada", "fotos"]
+
+JS_FOTOS = """
+() => {
+  const sel = '[class*="gallery"] img, [role="dialog"] img, [class*="vip-gallery"] img';
+  return [...document.querySelectorAll(sel)].map(e =>
+    e.getAttribute('data-zoom') || e.getAttribute('data-src') ||
+    (e.getAttribute('srcset') || '').split(' ')[0] || e.src
+  );
+}
+"""
 
 
 def hay_verificacion(page):
@@ -47,18 +58,56 @@ def extraer(page):
     return filas
 
 
-def fotos_detalle(page, url):
+def fotos_detalle(page, url, idx=0):
     page.goto(url, wait_until="domcontentloaded")
     esperar_verificacion(page)
-    page.wait_for_timeout(2000)
-    urls = page.eval_on_selector_all(
-        "figure.ui-pdp-gallery__figure img, .ui-pdp-gallery img",
-        "els => els.map(e => e.getAttribute('data-zoom') || e.getAttribute('data-src') || e.src)",
-    )
-    vistos = []
+
+    # Banner de cookies (puede tapar la galería)
+    try:
+        page.get_by_role("button", name=re.compile(r"Aceptar cookies", re.I)).click(timeout=1500)
+    except Exception:
+        pass
+
+    # Reto que no cambia la URL
+    if page.get_by_text(re.compile(r"verify you are|no soy un robot|verifica", re.I)).count():
+        input("Posible verificación en pantalla. Resuélvela y presiona Enter...")
+
+    page.wait_for_timeout(2500)
+
+    # Abrir la galería completa ("17 Fotos") si existe
+    try:
+        page.get_by_text(re.compile(r"\d+\s*Fotos?", re.I)).first.click(timeout=2000)
+        page.wait_for_timeout(1500)
+        # avanzar un poco para que carguen las imágenes perezosas del visor
+        for _ in range(5):
+            page.keyboard.press("ArrowRight")
+            page.wait_for_timeout(300)
+    except Exception:
+        pass
+
+    urls = page.evaluate(JS_FOTOS)
+
+    # Quitar vacíos, placeholders y duplicados (mismo ID de imagen en distintos tamaños)
+    vistos, claves = [], set()
     for u in urls:
-        if u and not u.startswith("data:") and u not in vistos:
+        if not u or u.startswith("data:") or "mlstatic" not in u:
+            continue
+        m = re.search(r"(\d{6,}-MLM\d+_\d+)", u)
+        clave = m.group(1) if m else u
+        if clave not in claves:
+            claves.add(clave)
             vistos.append(u)
+
+    try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+
+    if not vistos:
+        # Pista para diagnosticar: qué página cargó realmente
+        print(f"   ⚠️ 0 fotos. Título: {page.title()!r} | URL: {page.url}")
+        page.screenshot(path=f"debug_{idx}.png")
+
     return " | ".join(vistos)
 
 
@@ -104,12 +153,13 @@ try:
         print(f"{len(resultados)} anuncios del municipio de Querétaro")
 
         # --- Fase 2: todas las fotos de cada anuncio (opcional) ---
+        total = min(MAX_DETALLES, len(resultados))
         for i, r in enumerate(resultados[:MAX_DETALLES], 1):
             if not r["url"]:
                 continue
-            r["fotos"] = fotos_detalle(page, r["url"])
+            r["fotos"] = fotos_detalle(page, r["url"], i)
             n_fotos = len(r["fotos"].split(" | ")) if r["fotos"] else 0
-            print(f"[{i}/{min(MAX_DETALLES, len(resultados))}] {n_fotos} fotos")
+            print(f"[{i}/{total}] {n_fotos} fotos")
             time.sleep(PAUSA_DETALLE)
 
         context.close()

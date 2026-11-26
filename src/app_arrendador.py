@@ -6,8 +6,8 @@ import requests
 from playwright.sync_api import sync_playwright
 
 BASE = "https://inmuebles.mercadolibre.com.mx/departamentos/renta/queretaro/queretaro/"
-MAX_PAGINAS = 2
-MAX_DETALLES = 2
+MAX_PAGINAS = 5
+MAX_DETALLES = 240
 PAUSA_DETALLE = 8
 RADIO_M = 1500
 MAX_POR_CATEGORIA = 2

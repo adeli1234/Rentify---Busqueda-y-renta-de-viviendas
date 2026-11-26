@@ -3,11 +3,11 @@ import re
 import time
 from playwright.sync_api import sync_playwright
 
-BASE = "https://inmuebles.mercadolibre.com.mx/departamentos/venta/queretaro/queretaro/"
+BASE = "https://inmuebles.mercadolibre.com.mx/departamentos/renta/queretaro/queretaro/"
 MAX_PAGINAS = 10        # ~48 resultados por página
 MAX_DETALLES = 200       # cuántos anuncios visitar para sacar TODAS las fotos (0 = solo portada)
 PAUSA_DETALLE = 8       # segundos entre visitas a anuncios
-ARCHIVO = "propiedades_queretaro_imagenes.csv"
+ARCHIVO = "propiedades_queretaro_renta_imagenes.csv"
 COLUMNAS = ["titulo", "precio", "atributos", "ubicacion", "url", "foto_portada", "fotos"]
 
 JS_FOTOS = """

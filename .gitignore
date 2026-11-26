@@ -3,3 +3,5 @@ venv/
 
 *.toml
 .env
+
+/perfil_ml

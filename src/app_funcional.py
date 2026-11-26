@@ -3,7 +3,7 @@ import re
 import time
 from playwright.sync_api import sync_playwright
 
-BASE = "https://inmuebles.mercadolibre.com.mx/departamentos/renta/queretaro/queretaro/"
+BASE = "https://inmuebles.mercadolibre.com.mx/departamentos/venta/queretaro/queretaro/"
 MAX_PAGINAS = 10  # ~48 resultados por página
 
 def extraer(page):
